@@ -1,0 +1,9 @@
+{
+  "additionalFiles": "..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..,..\\..\\..\\..\\..\\..\\..\\..,..\\..\\..\\..\\..\\..,..\\..\\..,..\\..\\..,..\\..\\..,..\\..",
+  "compiler.optimization_flags": "",
+  "customBuildProperties": "",
+  "fqbn": "arduino:avr:uno",
+  "hardwareFolders": "C:\\Users\\A\\AppData\\Local\\Arduino15\\packages",
+  "otherLibrariesFolders": "C:\\Users\\A\\Documents\\Arduino\\libraries",
+  "sketchLocation": "C:\\Users\\A\\Desktop\\smart_irrigation_system"
+}

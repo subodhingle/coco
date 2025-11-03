@@ -1,0 +1,9 @@
+smart_irrigation/
+├── app.py
+├── arduino_reader.py
+├── templates/
+│   └── index.html
+├── static/
+│   └── js/
+│       └── chart.js
+└── smart_irrigation.ino
