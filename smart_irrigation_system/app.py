@@ -8,8 +8,7 @@ from flask_cors import CORS
 from arduino_reader import arduino_reader
 from datetime import datetime
 from threading import Lock
-import threading
-import time
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -42,17 +41,20 @@ def index():
 
 @app.route('/api/data')
 def get_data():
-    """API endpoint to get current sensor data"""
-    current_data = arduino_reader.get_current_data()
-    
-    # Add system status to response
-    response_data = {
-        'sensor_data': current_data,
-        'system_status': system_status,
-        'history': arduino_reader.get_history()[-10:]  # Last 10 readings for chart
+    """
+    Returns what index.html expects:
+    {
+      "sensor_data": {...},
+      "system_status": {...},
+      "history": [{timestamp, moisture}, ...]
     }
-    
-    return jsonify(response_data)
+    """
+    with _lock:
+        return jsonify({
+            "sensor_data": _sensor_data,
+            "system_status": _system_status,
+            "history": list(_history)
+        })
 
 @app.route("/api/ingest", methods=["POST"])
 def ingest():
@@ -93,28 +95,24 @@ def control():
     with _lock:
         if "auto_mode" in payload:
             _system_status["auto_mode"] = bool(payload["auto_mode"])
-            # if enabling auto-mode, manual pump toggles should be ignored by system
+            system_status['auto_mode'] = bool(payload["auto_mode"])
         if "manual_pump" in payload:
             # manual_pump true -> force pump on, false -> pump off
             _sensor_data["pump_status"] = bool(payload["manual_pump"])
             # when manual pump toggled, we are effectively in manual mode
             _system_status["auto_mode"] = False
+            system_status['auto_mode'] = False
 
     return jsonify({"ok": True, "system_status": _system_status, "sensor_data": _sensor_data})
 
 @app.route('/api/history')
 def get_history():
     """API endpoint to get full data history"""
-    return jsonify(arduino_reader.get_history())
+    with _lock:
+        return jsonify(list(_history))
 
 if __name__ == '__main__':
-    # Start reading from Arduino
-    if arduino_reader.start_reading():
-        print("Arduino reader started successfully")
-    else:
-        print("Failed to start Arduino reader")
-    
-    # Start Flask app
     print("Starting Flask server...")
     print("Dashboard will be available at: http://127.0.0.1:5000")
+    print("\nNote: Run main.py in a separate terminal to start reading from Arduino (COM6)")
     app.run(debug=True, host='127.0.0.1', port=5000)
