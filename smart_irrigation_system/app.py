@@ -4,11 +4,17 @@ Provides web interface to monitor and control the irrigation system
 """
 
 from flask import Flask, render_template, jsonify, request
+from flask_cors import CORS
 from arduino_reader import arduino_reader
+from datetime import datetime
+from threading import Lock
 import threading
 import time
 
 app = Flask(__name__)
+CORS(app)
+
+_lock = Lock()
 
 # Store system status
 system_status = {
@@ -16,6 +22,18 @@ system_status = {
     'manual_override': False,
     'manual_pump_status': False
 }
+
+# current sensor data and system state
+_sensor_data = {
+    "moisture": None,
+    "raw_value": None,
+    "pump_status": False,
+    "threshold_low": 30,
+    "threshold_high": 60
+}
+_system_status = {"auto_mode": True}
+_history = []  # list of {"timestamp": iso_str, "moisture": value}
+_MAX_HISTORY = 500
 
 @app.route('/')
 def index():
@@ -36,22 +54,53 @@ def get_data():
     
     return jsonify(response_data)
 
-@app.route('/api/control', methods=['POST'])
-def control_system():
-    """API endpoint to control the irrigation system"""
-    global system_status
-    
-    data = request.get_json()
-    
-    if 'auto_mode' in data:
-        system_status['auto_mode'] = data['auto_mode']
-        system_status['manual_override'] = not data['auto_mode']
-    
-    if 'manual_pump' in data and system_status['manual_override']:
-        system_status['manual_pump_status'] = data['manual_pump']
-        # In a real system, you would send command to Arduino here
-    
-    return jsonify({'status': 'success', 'system_status': system_status})
+@app.route("/api/ingest", methods=["POST"])
+def ingest():
+    """
+    Expects the raw JSON from the serial device:
+    {"moisture": 100, "raw_value": 1022, "pump_status": false, "threshold_low": 30, "threshold_high": 60}
+    """
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "invalid json"}), 400
+
+    with _lock:
+        # update sensor data fields that exist in payload
+        for k in ("moisture", "raw_value", "pump_status", "threshold_low", "threshold_high"):
+            if k in payload:
+                _sensor_data[k] = payload[k]
+
+        # append to history (timestamp as ISO)
+        _history.append({
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "moisture": _sensor_data.get("moisture")
+        })
+        # truncate
+        if len(_history) > _MAX_HISTORY:
+            del _history[0: len(_history) - _MAX_HISTORY]
+
+    return jsonify({"ok": True}), 200
+
+@app.route("/api/control", methods=["POST"])
+def control():
+    """
+    Accepts { "auto_mode": bool } or { "manual_pump": bool }
+    """
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "invalid json"}), 400
+
+    with _lock:
+        if "auto_mode" in payload:
+            _system_status["auto_mode"] = bool(payload["auto_mode"])
+            # if enabling auto-mode, manual pump toggles should be ignored by system
+        if "manual_pump" in payload:
+            # manual_pump true -> force pump on, false -> pump off
+            _sensor_data["pump_status"] = bool(payload["manual_pump"])
+            # when manual pump toggled, we are effectively in manual mode
+            _system_status["auto_mode"] = False
+
+    return jsonify({"ok": True, "system_status": _system_status, "sensor_data": _sensor_data})
 
 @app.route('/api/history')
 def get_history():

@@ -1,7 +1,3 @@
-# library install 
-# pip install pyserial
-
-
 import serial
 
 # Set up the serial connection (adjust baudrate as needed)
